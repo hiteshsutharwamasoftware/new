@@ -1,0 +1,16 @@
+{
+  "detected_at": 1777294816,
+  "setup": [
+    "npm ci"
+  ],
+  "test": [
+    "npm test"
+  ],
+  "build": [
+    "npm run build"
+  ],
+  "deploy": [],
+  "notes": [
+    "Detected Node project (package.json)."
+  ]
+}
