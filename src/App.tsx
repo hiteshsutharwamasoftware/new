@@ -3,9 +3,22 @@ import reactLogo from './assets/react.svg'
 import viteLogo from './assets/vite.svg'
 import heroImg from './assets/hero.png'
 import './App.css'
+import { useWidgetUser } from './hooks/useWidget'
+
+// Replace this with your real auth context when you have one
+const MOCK_USER = {
+  id: 'user-1',
+  name: 'Demo User',
+  email: 'demo@example.com',
+  role: 'user',
+  tenant: { id: 'tenant-1', name: 'Demo Org' }
+}
 
 function App() {
   const [count, setCount] = useState(0)
+
+  // Syncs current user into the feedback widget
+  useWidgetUser(MOCK_USER)
 
   return (
     <>
