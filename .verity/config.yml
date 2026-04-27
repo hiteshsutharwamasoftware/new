@@ -1,0 +1,21 @@
+version: 1
+verity:
+  project_id: "caebd835-20e7-4418-8eb2-1db0367d47fb"
+  callback_url: "https://69b5-2409-40d4-1069-ba9f-4c2d-f04a-3d4f-4457.ngrok-free.app/api/callbacks/github-actions"
+  bootstrap_version: "v1"
+
+commands:
+  setup: []
+  test: []
+  build: []
+  deploy: []
+
+policies:
+  pr_review:
+    enabled: true
+    label_required: "verity:agent"
+  openai_guardrail:
+    enabled: true
+  documentation:
+    auto_mode: true
+    handoff_file: "docs/AI_HANDOFF.md"
