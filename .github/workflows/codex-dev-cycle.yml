@@ -244,6 +244,7 @@ jobs:
           safety-strategy: drop-sudo
           sandbox: workspace-write
           allow-bots: true
+          allow-bot-users: bluesky-atg-verity[bot]
           codex-args: '["--full-auto"]'
 
       - name: Sync docs context (auto document mode)

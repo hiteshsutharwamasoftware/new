@@ -144,6 +144,8 @@ jobs:
           output-file: codex-review.md
           safety-strategy: drop-sudo
           sandbox: read-only
+          allow-bots: true
+          allow-bot-users: bluesky-atg-verity[bot]
 
       - name: Parse review decision
         id: review_parse

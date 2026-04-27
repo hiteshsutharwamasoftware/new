@@ -153,6 +153,7 @@ jobs:
           safety-strategy: drop-sudo
           sandbox: workspace-write
           allow-bots: true
+          allow-bot-users: bluesky-atg-verity[bot]
           codex-args: '["--full-auto","--output-schema",".github/codex/schemas/issue.schema.json"]'
 
       - name: Create issue
