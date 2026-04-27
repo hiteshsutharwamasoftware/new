@@ -1,0 +1,412 @@
+name: Verity Codex Dev Cycle
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Issue number (optional)"
+        required: false
+        default: ""
+      user_request:
+        description: "What to implement/fix (optional)"
+        required: false
+        default: ""
+      callback_url:
+        description: "Verity callback URL override (optional)"
+        required: false
+        default: ""
+      verity_project_id:
+        description: "Verity project id override (optional)"
+        required: false
+        default: ""
+      pr_title:
+        description: "PR title override (optional)"
+        required: false
+        default: ""
+      pr_labels:
+        description: "Comma-separated labels"
+        required: false
+        default: "verity:agent,verity:codex"
+      pr_draft:
+        description: "Create PR as draft (true/false)"
+        required: false
+        default: "false"
+      allow_docs_only_pr:
+        description: "Allow PRs with docs-only changes (true/false)"
+        required: false
+        default: "false"
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: verity-dev-cycle-${{ github.repository }}-${{ inputs.issue_number != '' && inputs.issue_number || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  dev_cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION || vars.AWS_REGION || 'us-east-1' }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || vars.AWS_REGION || 'us-east-1' }}
+
+    steps:
+      - name: Checkout (default branch)
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Verify required secrets
+        run: |
+          if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
+            echo "Missing required secret OPENAI_API_KEY" >&2
+            exit 1
+          fi
+          if [ -z "${{ secrets.VERITY_PROJECT_TOKEN }}" ]; then
+            echo "Missing required secret VERITY_PROJECT_TOKEN" >&2
+            exit 1
+          fi
+
+      - name: Detect GitHub App write-token config
+        id: gh_write_cfg
+        env:
+          VERITY_GITHUB_APP_ID: ${{ secrets.VERITY_GITHUB_APP_ID }}
+          VERITY_GITHUB_APP_PRIVATE_KEY: ${{ secrets.VERITY_GITHUB_APP_PRIVATE_KEY }}
+        run: |
+          if [ -n "$VERITY_GITHUB_APP_ID" ] && [ -n "$VERITY_GITHUB_APP_PRIVATE_KEY" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve GitHub write token (optional GitHub App)
+        id: gh_write_token
+        if: ${{ steps.gh_write_cfg.outputs.enabled == 'true' }}
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.VERITY_GITHUB_APP_ID }}
+          private-key: ${{ secrets.VERITY_GITHUB_APP_PRIVATE_KEY }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install YAML parser
+        run: python -m pip install --upgrade pip pyyaml
+
+      - name: Load .verity/config.yml
+        id: cfg
+        run: |
+          python - <<'PY' > /tmp/verity-callback.json
+          import os
+          from pathlib import Path
+          import yaml
+
+          cfg_path = Path(".verity/config.yml")
+          if not cfg_path.exists():
+            raise SystemExit("Missing .verity/config.yml (bootstrap incomplete)")
+
+          cfg = yaml.safe_load(cfg_path.read_text()) or {}
+          verity = cfg.get("verity", {}) or {}
+          commands = cfg.get("commands", {}) or {}
+          policies = cfg.get("policies", {}) or {}
+          callback_override = os.environ.get("VERITY_CALLBACK_OVERRIDE", "").strip()
+          project_override = os.environ.get("VERITY_PROJECT_OVERRIDE", "").strip()
+
+          def norm_list(v):
+            if v is None: return []
+            if isinstance(v, list): return [str(x) for x in v if str(x).strip()]
+            if isinstance(v, str) and v.strip(): return [v.strip()]
+            return []
+
+          out = os.environ["GITHUB_OUTPUT"]
+          with open(out, "a", encoding="utf-8") as f:
+            f.write(f"project_id={project_override or str(verity.get('project_id','')).strip()}\n")
+            f.write(f"callback_url={callback_override or str(verity.get('callback_url','')).strip()}\n")
+            f.write("setup_cmds<<EOF\n" + "\n".join(norm_list(commands.get("setup"))) + "\nEOF\n")
+            f.write("test_cmds<<EOF\n" + "\n".join(norm_list(commands.get("test"))) + "\nEOF\n")
+            f.write("build_cmds<<EOF\n" + "\n".join(norm_list(commands.get("build"))) + "\nEOF\n")
+            f.write(f"pr_review_enabled={bool((policies.get('pr_review', {}) or {}).get('enabled', True))}\n")
+            f.write(f"pr_review_label={str((policies.get('pr_review', {}) or {}).get('label_required','verity:agent')).strip()}\n")
+          PY
+        env:
+          VERITY_CALLBACK_OVERRIDE: ${{ inputs.callback_url }}
+          VERITY_PROJECT_OVERRIDE: ${{ inputs.verity_project_id }}
+
+      - name: Run setup commands
+        if: ${{ steps.cfg.outputs.setup_cmds != '' }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r cmd; do
+            [ -z "$cmd" ] && continue
+            echo "::group::setup: $cmd"
+            bash -lc "$cmd"
+            echo "::endgroup::"
+          done <<< "${{ steps.cfg.outputs.setup_cmds }}"
+
+      - name: Notify Verity - started
+        continue-on-error: true
+        env:
+          VERITY_PROJECT_TOKEN: ${{ secrets.VERITY_PROJECT_TOKEN }}
+          VERITY_PROJECT_ID: ${{ steps.cfg.outputs.project_id }}
+          VERITY_CALLBACK_URL: ${{ steps.cfg.outputs.callback_url }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          BRANCH_NAME: ${{ github.ref_name }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          python - <<'PY' > /tmp/verity-callback.json
+          import json, os
+          payload = {
+            "event": "workflow_started",
+            "project_id": os.environ.get("VERITY_PROJECT_ID"),
+            "repo": os.environ.get("GITHUB_REPOSITORY"),
+            "workflow": os.environ.get("GITHUB_WORKFLOW"),
+            "run_id": os.environ.get("GITHUB_RUN_ID"),
+            "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+            "run_url": f"https://github.com/{os.environ.get('GITHUB_REPOSITORY')}/actions/runs/{os.environ.get('GITHUB_RUN_ID')}",
+            "issue_number": os.environ.get("ISSUE_NUMBER") or None,
+            "branch": os.environ.get("BRANCH_NAME") or None,
+            "sha": os.environ.get("HEAD_SHA") or None,
+            "run_correlation_id": f"{os.environ.get('GITHUB_WORKFLOW')}:{os.environ.get('GITHUB_RUN_ID')}:{os.environ.get('GITHUB_RUN_ATTEMPT')}"
+          }
+          print(json.dumps(payload))
+          PY
+            curl -sS -X POST "$VERITY_CALLBACK_URL" \
+            -H "Authorization: Bearer $VERITY_PROJECT_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @/tmp/verity-callback.json || true
+
+      - name: Fetch issue context (optional)
+        if: ${{ inputs.issue_number != '' && inputs.issue_number != '0' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ steps.gh_write_token.outputs.token || secrets.VERITY_GITHUB_WRITE_TOKEN || github.token }}
+          script: |
+            const fs = require("fs");
+            const issue_number = Number(process.env.ISSUE_NUMBER);
+            const { data: issue } = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+            });
+            const sanitize = (s) => (s || "").replace(/<!--[\s\S]*?-->/g, "").slice(0, 20000);
+            fs.writeFileSync("issue_context.md", [
+              `# Issue #${issue_number}: ${issue.title}`,
+              "",
+              sanitize(issue.body),
+              "",
+            ].join("\n"));
+        env:
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+
+      - name: Render Codex prompt (append runtime inputs)
+        env:
+          USER_REQUEST: ${{ inputs.user_request }}
+        run: |
+          set -euo pipefail
+          cat .github/codex/prompts/dev-cycle.md > codex-prompt.md
+          echo "" >> codex-prompt.md
+          echo "## Runtime inputs" >> codex-prompt.md
+          echo "" >> codex-prompt.md
+          echo "- Repo: ${GITHUB_REPOSITORY}" >> codex-prompt.md
+          echo "- Run URL: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> codex-prompt.md
+          echo "- Verity Project ID: ${{ steps.cfg.outputs.project_id }}" >> codex-prompt.md
+          if [ -n "${USER_REQUEST:-}" ]; then
+            echo "" >> codex-prompt.md
+            echo "## User request" >> codex-prompt.md
+            echo "" >> codex-prompt.md
+            printf '%s\n' "$USER_REQUEST" >> codex-prompt.md
+          fi
+          if [ -f issue_context.md ]; then
+            echo "" >> codex-prompt.md
+            echo "## Issue context" >> codex-prompt.md
+            echo "" >> codex-prompt.md
+            cat issue_context.md >> codex-prompt.md
+          fi
+
+      - name: Run Codex (workspace edits allowed)
+        id: run_codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          model: ${{ vars.VERITY_CODEX_MODEL != '' && vars.VERITY_CODEX_MODEL || 'gpt-5' }}
+          prompt-file: codex-prompt.md
+          output-file: codex-output.md
+          safety-strategy: drop-sudo
+          sandbox: workspace-write
+          allow-bots: true
+          codex-args: '["--full-auto"]'
+
+      - name: Sync docs context (auto document mode)
+        run: python scripts/sync_repo_docs.py
+
+      - name: Run tests (configured)
+        if: ${{ steps.cfg.outputs.test_cmds != '' }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r cmd; do
+            [ -z "$cmd" ] && continue
+            echo "::group::test: $cmd"
+            bash -lc "$cmd"
+            echo "::endgroup::"
+          done <<< "${{ steps.cfg.outputs.test_cmds }}"
+
+      - name: Reinstall frontend dependencies before build
+        if: ${{ steps.cfg.outputs.build_cmds != '' && hashFiles('frontend/package-lock.json') != '' }}
+        run: |
+          set -euo pipefail
+          cd frontend
+          npm ci
+
+      - name: Run build (configured)
+        if: ${{ steps.cfg.outputs.build_cmds != '' }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r cmd; do
+            [ -z "$cmd" ] && continue
+            echo "::group::build: $cmd"
+            bash -lc "$cmd"
+            echo "::endgroup::"
+          done <<< "${{ steps.cfg.outputs.build_cmds }}"
+
+      - name: Clean generated artifacts before PR
+        run: |
+          set -euo pipefail
+
+          # Remove common local artifacts created during Codex/test/build execution.
+          find . -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find . -type f -name '*.pyc' -delete
+          rm -f codex-prompt.md codex-output.md issue_context.md
+          rm -rf frontend/node_modules/.vite frontend/node_modules/.vite-* frontend/.vite
+
+          # If these paths are tracked in this repo, restore them to avoid noisy PR diffs.
+          while IFS= read -r path; do
+            git restore --source=HEAD --staged --worktree -- "$path" || true
+          done < <(
+            git diff --name-only | grep -E '^(codex-prompt\.md|codex-output\.md|issue_context\.md|__pycache__/|.*\.pyc$|frontend/node_modules/\.vite($|/)|frontend/node_modules/\.vite-[^/]+/)'
+          )
+
+      - name: Guard against docs-only PRs
+        env:
+          ALLOW_DOCS_ONLY_PR: ${{ inputs.allow_docs_only_pr }}
+        run: |
+          set -euo pipefail
+          changed_files="$(git diff --name-only HEAD || true)"
+          if [ -z "$changed_files" ]; then
+            echo "No changes detected; skipping docs-only guard."
+            exit 0
+          fi
+
+          non_docs="$(
+            printf '%s\n' "$changed_files" | grep -Ev '(^docs/|^README\.md$|^CHANGELOG\.md$|^LICENSE$|^AGENTS\.md$|^\.github/codex/prompts/|^\.github/codex/schemas/|\.md$)' || true
+          )"
+
+          if [ -n "$non_docs" ]; then
+            echo "Non-doc changes detected; continuing."
+            exit 0
+          fi
+
+          if [ "${ALLOW_DOCS_ONLY_PR}" = "true" ]; then
+            echo "Only docs changed, but allow_docs_only_pr=true so continuing."
+            exit 0
+          fi
+
+          echo "Docs-only change set detected. Set allow_docs_only_pr=true for documentation-only runs." >&2
+          exit 1
+
+      - name: Create PR with changes
+        id: cpr
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ steps.gh_write_token.outputs.token || secrets.VERITY_GITHUB_WRITE_TOKEN || github.token }}
+          commit-message: "chore(verity): codex dev-cycle changes"
+          branch: verity/codex-dev-cycle-${{ github.run_id }}
+          delete-branch: true
+          title: ${{ inputs.pr_title != '' && inputs.pr_title || format('Verity Codex dev-cycle (run {0})', github.run_id) }}
+          body: |
+            This PR was created automatically by Verity/Codex.
+
+            - Workflow run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            - Issue: ${{ inputs.issue_number }}
+
+            ## Codex summary
+            ${{ steps.run_codex.outputs.final-message }}
+          labels: ${{ inputs.pr_labels }}
+          draft: ${{ inputs.pr_draft == 'true' }}
+
+      - name: Comment on issue with PR link
+        if: ${{ inputs.issue_number != '' && inputs.issue_number != '0' && steps.cpr.outputs.pull-request-number != '' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ steps.gh_write_token.outputs.token || secrets.VERITY_GITHUB_WRITE_TOKEN || github.token }}
+          script: |
+            const issue_number = Number(process.env.ISSUE_NUMBER);
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              body: `Opened PR #${process.env.PR_NUMBER}: ${process.env.PR_URL}\n\n(Generated by Verity/Codex dev cycle.)`,
+            });
+        env:
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          PR_NUMBER: ${{ steps.cpr.outputs.pull-request-number }}
+          PR_URL: ${{ steps.cpr.outputs.pull-request-url }}
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verity-codex-dev-cycle
+          path: |
+            codex-prompt.md
+            codex-output.md
+            issue_context.md
+          if-no-files-found: ignore
+
+      - name: Notify Verity - completed
+        if: always()
+        continue-on-error: true
+        env:
+          VERITY_PROJECT_TOKEN: ${{ secrets.VERITY_PROJECT_TOKEN }}
+          VERITY_PROJECT_ID: ${{ steps.cfg.outputs.project_id }}
+          VERITY_CALLBACK_URL: ${{ steps.cfg.outputs.callback_url }}
+          JOB_STATUS: ${{ job.status }}
+          PR_NUMBER: ${{ steps.cpr.outputs.pull-request-number }}
+          PR_URL: ${{ steps.cpr.outputs.pull-request-url }}
+          CODEX_FINAL_MESSAGE: ${{ steps.run_codex.outputs.final-message }}
+          BRANCH_NAME: ${{ github.ref_name }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          python - <<'PY' > /tmp/verity-callback.json
+          import json, os
+          payload = {
+            "event": "workflow_completed",
+            "project_id": os.environ.get("VERITY_PROJECT_ID"),
+            "repo": os.environ.get("GITHUB_REPOSITORY"),
+            "workflow": os.environ.get("GITHUB_WORKFLOW"),
+            "run_id": os.environ.get("GITHUB_RUN_ID"),
+            "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+            "run_url": f"https://github.com/{os.environ.get('GITHUB_REPOSITORY')}/actions/runs/{os.environ.get('GITHUB_RUN_ID')}",
+            "status": os.environ.get("JOB_STATUS"),
+            "pr_number": os.environ.get("PR_NUMBER") or None,
+            "pr_url": os.environ.get("PR_URL") or None,
+            "codex_final_message": (os.environ.get("CODEX_FINAL_MESSAGE") or "")[:20000],
+            "branch": os.environ.get("BRANCH_NAME") or None,
+            "sha": os.environ.get("HEAD_SHA") or None,
+            "run_correlation_id": f"{os.environ.get('GITHUB_WORKFLOW')}:{os.environ.get('GITHUB_RUN_ID')}:{os.environ.get('GITHUB_RUN_ATTEMPT')}"
+          }
+          print(json.dumps(payload))
+          PY
+            curl -sS -X POST "$VERITY_CALLBACK_URL" \
+            -H "Authorization: Bearer $VERITY_PROJECT_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @/tmp/verity-callback.json || true
