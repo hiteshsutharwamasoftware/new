@@ -34,6 +34,26 @@ function App() {
             Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
           </p>
         </div>
+        <form role="search" aria-label="Quick search" style={{ width: '100%', maxWidth: 480 }}>
+          <label htmlFor="homepage-textbox" className="sr-only">
+            Search or enter text
+          </label>
+          <input
+            id="homepage-textbox"
+            name="q"
+            type="text"
+            placeholder="Search or enter text"
+            aria-label="Search or enter text"
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              borderRadius: 6,
+              border: '1px solid var(--border)',
+              background: 'var(--bg)',
+              color: 'var(--text)',
+            }}
+          />
+        </form>
         <button
           type="button"
           className="counter"
