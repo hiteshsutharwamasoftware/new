@@ -1,6 +1,6 @@
 # As a user, I want only the dark/light theme toggle without default React theme page content
 
-<!-- verity-story-sync {"storyId":"43ef5051-681b-4943-b2a2-d63d0445354c","version":2,"origin":"verity"} -->
+<!-- verity-story-sync {"storyId":"43ef5051-681b-4943-b2a2-d63d0445354c","version":3,"origin":"verity"} -->
 
 - Story ID: `43ef5051-681b-4943-b2a2-d63d0445354c`
 - Status: `active`
