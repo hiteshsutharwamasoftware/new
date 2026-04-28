@@ -25,7 +25,7 @@ REQUIRED_WORKFLOWS = [
 ]
 
 PLACEHOLDER_BLOCKLIST = [
-    # "https://69b5-2409-40d4-1069-ba9f-4c2d-f04a-3d4f-4457.ngrok-free.app/api/callbacks/github-actions",
+    # "https://9bba-2409-40d4-100a-b401-94c9-bfa7-3490-a47c.ngrok-free.app/api/callbacks/github-actions",
     # "caebd835-20e7-4418-8eb2-1db0367d47fb",
 ]
 

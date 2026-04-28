@@ -98,7 +98,7 @@ jobs:
           VERITY_PROJECT_ID: ${{ steps.cfg.outputs.project_id }}
           VERITY_CALLBACK_URL: ${{ steps.cfg.outputs.callback_url }}
         run: |
-          if [ -z "$VERITY_CALLBACK_URL" ] || [ "$VERITY_CALLBACK_URL" = "https://69b5-2409-40d4-1069-ba9f-4c2d-f04a-3d4f-4457.ngrok-free.app/api/callbacks/github-actions" ]; then
+          if [ -z "$VERITY_CALLBACK_URL" ] || [ "$VERITY_CALLBACK_URL" = "https://9bba-2409-40d4-100a-b401-94c9-bfa7-3490-a47c.ngrok-free.app/api/callbacks/github-actions" ]; then
             echo "Skipping callback: callback URL not configured"
             exit 0
           fi
@@ -289,7 +289,7 @@ jobs:
           GENERATED_STORIES_JSON: ${{ steps.extract_stories.outputs.generated_stories }}
           GENERATED_STORY_COUNT: ${{ steps.extract_stories.outputs.generated_story_count }}
         run: |
-          if [ -z "$VERITY_CALLBACK_URL" ] || [ "$VERITY_CALLBACK_URL" = "https://69b5-2409-40d4-1069-ba9f-4c2d-f04a-3d4f-4457.ngrok-free.app/api/callbacks/github-actions" ]; then
+          if [ -z "$VERITY_CALLBACK_URL" ] || [ "$VERITY_CALLBACK_URL" = "https://9bba-2409-40d4-100a-b401-94c9-bfa7-3490-a47c.ngrok-free.app/api/callbacks/github-actions" ]; then
             echo "Skipping callback: callback URL not configured"
             exit 0
           fi
