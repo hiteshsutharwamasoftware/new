@@ -1,8 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from './assets/vite.svg'
 import heroImg from './assets/hero.png'
 import './App.css'
+import {
+  THEME_KEY,
+  computeInitialTheme,
+  toggleTheme as toggleThemeValue,
+  persistTheme,
+  applyThemeAttr,
+} from './theme.js'
 import { useWidgetUser } from './hooks/useWidget'
 
 // Replace this with your real auth context when you have one
@@ -16,9 +23,35 @@ const MOCK_USER = {
 
 function App() {
   const [count, setCount] = useState(0)
+  const [theme, setTheme] = useState('light')
 
   // Syncs current user into the feedback widget
   useWidgetUser(MOCK_USER)
+
+  useEffect(() => {
+    try {
+      const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(THEME_KEY) : null
+      const prefersDark = typeof window !== 'undefined' && 'matchMedia' in window
+        ? window.matchMedia('(prefers-color-scheme: dark)').matches
+        : false
+      const initial = computeInitialTheme(stored, prefersDark)
+      setTheme(initial)
+      applyThemeAttr(initial)
+    } catch {
+      // fall back to default light theme
+    }
+  }, [])
+
+  function onToggleTheme() {
+    setTheme((curr) => {
+      const next = toggleThemeValue(curr as any)
+      applyThemeAttr(next)
+      if (typeof localStorage !== 'undefined') {
+        persistTheme(localStorage, next as any)
+      }
+      return next
+    })
+  }
 
   return (
     <>
@@ -55,6 +88,16 @@ function App() {
           onClick={() => setCount((count) => count + 1)}
         >
           Count is {count}
+        </button>
+
+        {/* Theme toggle accessible to homepage visitors */}
+        <button
+          type="button"
+          className="counter"
+          aria-pressed={theme === 'dark'}
+          onClick={onToggleTheme}
+        >
+          Toggle theme (current: {theme})
         </button>
       </section>
 
