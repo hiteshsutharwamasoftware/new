@@ -1,9 +1,9 @@
 # As a homepage visitor, I want to toggle between dark and light themes
 
-<!-- verity-story-sync {"storyId":"c11df11e-aa45-4b59-8a51-1ca09db9726a","version":1,"origin":"verity"} -->
+<!-- verity-story-sync {"storyId":"c11df11e-aa45-4b59-8a51-1ca09db9726a","version":2,"origin":"verity"} -->
 
 - Story ID: `c11df11e-aa45-4b59-8a51-1ca09db9726a`
-- Status: `proposed`
+- Status: `active`
 - Priority: `high`
 - Path: `.verity/user-stories/c11df11e-aa45-4b59-8a51-1ca09db9726a-as-a-homepage-visitor-i-want-to-toggle-between-dark-and-ligh.md`
 
