@@ -34,6 +34,21 @@ function App() {
             Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
           </p>
         </div>
+        {/* Prominent, accessible textbox for homepage visitors */}
+        <div className="textbox-wrap">
+          <label htmlFor="homepage-textbox" className="sr-only">Homepage text input</label>
+          <input
+            id="homepage-textbox"
+            name="homepage-textbox"
+            type="text"
+            className="homepage-textbox"
+            placeholder="Type here to begin..."
+            aria-describedby="textbox-help"
+            inputMode="text"
+            autoComplete="off"
+          />
+          <p id="textbox-help" className="visually-subtle">Press Tab to focus, then start typing.</p>
+        </div>
         <button
           type="button"
           className="counter"
