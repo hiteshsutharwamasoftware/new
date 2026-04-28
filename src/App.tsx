@@ -3,6 +3,7 @@ import reactLogo from './assets/react.svg'
 import viteLogo from './assets/vite.svg'
 import heroImg from './assets/hero.png'
 import './App.css'
+import { useTheme } from './hooks/useTheme'
 import { useWidgetUser } from './hooks/useWidget'
 
 // Replace this with your real auth context when you have one
@@ -16,12 +17,24 @@ const MOCK_USER = {
 
 function App() {
   const [count, setCount] = useState(0)
+  const { theme, toggle } = useTheme()
 
   // Syncs current user into the feedback widget
   useWidgetUser(MOCK_USER)
 
   return (
     <>
+      {/* Accessible, persistent theme toggle */}
+      <button
+        type="button"
+        className="theme-toggle"
+        aria-label="Toggle color theme"
+        aria-pressed={theme === 'dark'}
+        onClick={toggle}
+      >
+        <span aria-hidden="true">{theme === 'dark' ? '🌙' : '☀️'}</span>
+        <span>{theme === 'dark' ? 'Dark' : 'Light'}</span>
+      </button>
       <section id="center">
         <div className="hero">
           <img src={heroImg} className="base" width="170" height="179" alt="" />
@@ -32,6 +45,9 @@ function App() {
           <h1>Get started</h1>
           <p>
             Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
+          </p>
+          <p style={{ marginTop: 8, fontSize: 14, color: 'var(--text)' }}>
+            Current theme: <strong style={{ color: 'var(--text-h)' }}>{theme}</strong>
           </p>
         </div>
         {/* Prominent, accessible textbox for homepage visitors */}
